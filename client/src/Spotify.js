@@ -1,0 +1,155 @@
+import axios from "axios";
+
+const LOCALSTORAGE_KEYS = {
+    accessToken: "spotify_access_token",
+    refreshToken: "spotify_refresh_token",
+    expireTime: "spotify_token_expire_time",
+    timestamp: "spotify_token_timestamp",
+}
+
+const LOCALSTORAGE_VALUES = {
+    accessToken: window.localStorage.getItem(LOCALSTORAGE_KEYS.accessToken),
+    refreshToken: window.localStorage.getItem(LOCALSTORAGE_KEYS.refreshToken),
+    expireTime: window.localStorage.getItem(LOCALSTORAGE_KEYS.expireTime),
+    timestamp: window.localStorage.getItem(LOCALSTORAGE_KEYS.timestamp),
+}
+
+//clear out all local storage and reload page
+export const logout = () => {
+    for(const property in LOCALSTORAGE_KEYS) {
+        window.localStorage.removeItem(LOCALSTORAGE_KEYS[property]);
+    } 
+
+    //go to home page
+    window.location = window.location.origin;
+};
+
+const hasTokenExpired = () => {
+    const { accessToken, timestamp, expireTime } = LOCALSTORAGE_VALUES;
+    if(!accessToken || !timestamp) {
+        return false;
+    }
+
+    const millisecondsElapsed = Date.now() - Number(timestamp);
+    return (millisecondsElapsed / 1000) > Number(expireTime);
+};
+
+const refreshToken = async () => {
+    try {
+        //if no refresh token or infinite reload loop somehow, logout and have user re sign in
+        if(!LOCALSTORAGE_VALUES.refreshToken || 
+        LOCALSTORAGE_VALUES.refreshToken === 'undefined' || 
+        (Date.now() - Number(LOCALSTORAGE_VALUES.timestamp) / 1000 ) < 1000) {
+            console.error("No refresh token available");
+            logout();
+        }
+
+        //get new refresh token from Node app
+        const { data } = await axios.get(`/refresh_token?refresh_token=${LOCALSTORAGE_VALUES.refreshToken}`);
+
+        //update localstorage values
+        window.localStorage.setItem(LOCALSTORAGE_KEYS.accessToken, data.access_token);
+        window.localStorage.setItem(LOCALSTORAGE_KEYS.timestamp, Date.now());
+
+        //must reload for localstorage changes to be updated
+        window.location.reload();
+    } catch (e) {
+        console.error(e);
+    }
+};
+
+const getAccessToken = () => {
+    const queryString = window.location.search;
+    const urlParams = new URLSearchParams(queryString);
+    const queryParams = {
+        [LOCALSTORAGE_KEYS.accessToken]: urlParams.get("access_token"),
+        [LOCALSTORAGE_KEYS.refreshToken]: urlParams.get("refresh_token"),
+        [LOCALSTORAGE_KEYS.expireTime]: urlParams.get("expires_in"),
+    };
+
+    const hasError = urlParams.get("error");
+
+    if(hasError || hasTokenExpired() || LOCALSTORAGE_VALUES.accessToken === 'undefined') {
+        refreshToken();
+    }
+
+    if(LOCALSTORAGE_VALUES.accessToken && LOCALSTORAGE_VALUES.accessToken !== 'undefined') {
+        return LOCALSTORAGE_VALUES.accessToken;
+    }
+
+    //If url has a token, user is signing in for the first time
+    if(queryParams[LOCALSTORAGE_KEYS.accessToken]) {
+        for(const property in queryParams) {
+            window.localStorage.setItem(property, queryParams[property]);
+        }
+        window.localStorage.setItem(LOCALSTORAGE_KEYS.timestamp, Date.now());
+        return queryParams[LOCALSTORAGE_KEYS.accessToken];
+    }
+
+    //should never get here!
+    return false;
+}
+
+export const accessToken = getAccessToken();
+
+
+/**
+ * Axios global request headers
+ * https://github.com/axios/axios#global-axios-defaults
+ */
+axios.defaults.baseURL = 'https://api.spotify.com/v1';
+axios.defaults.headers['Authorization'] = `Bearer ${accessToken}`;
+axios.defaults.headers['Content-Type'] = 'application/json';
+
+export const getCurrentUserProfile = () => axios.get("/me");
+
+/**
+ * Get a List of Current User's Playlists
+ * https://developer.spotify.com/documentation/web-api/reference/#endpoint-get-a-list-of-current-users-playlists
+ * @returns {Promise}
+ */
+export const getCurrentUserPlaylists = (limit = 20) => {
+    return axios.get(`/me/playlists?limit=${limit}`);
+  };
+
+
+  /**
+ * Get a User's Top Artists and Tracks
+ * https://developer.spotify.com/documentation/web-api/reference/#endpoint-get-users-top-artists-and-tracks
+ * @param {string} time_range - 'short_term' (last 4 weeks) 'medium_term' (last 6 months) or 'long_term' (calculated from several years of data and including all new data as it becomes available). Defaults to 'short_term'
+ * @returns {Promise}
+ */
+export const getTopArtists = (time_range = 'short_term') => {
+    return axios.get(`/me/top/artists?time_range=${time_range}`);
+  };
+
+
+  /**
+ * Get a User's Top Tracks
+ * https://developer.spotify.com/documentation/web-api/reference/#endpoint-get-users-top-artists-and-tracks
+ * @param {string} time_range - 'short_term' (last 4 weeks) 'medium_term' (last 6 months) or 'long_term' (calculated from several years of data and including all new data as it becomes available). Defaults to 'short_term'
+ * @returns {Promise}
+ */
+ export const getTopTracks = (time_range = 'short_term') => {
+    return axios.get(`/me/top/tracks?time_range=${time_range}`);
+  };
+
+  /**
+ * Get a Playlist
+ * https://developer.spotify.com/documentation/web-api/reference/#endpoint-get-playlist
+ * @param {string} playlist_id - The Spotify ID for the playlist.
+ * @returns {Promise}
+ */
+export const getPlaylistById = playlist_id => {
+    return axios.get(`/playlists/${playlist_id}`);
+  }
+
+  /**
+ * Get Audio Features for Several Tracks
+ * https://developer.spotify.com/documentation/web-api/reference/#endpoint-get-several-audio-features
+ * @param {string} ids - A comma-separated list of the Spotify IDs for the tracks
+ * @returns {Promise}
+ */
+export const getAudioFeaturesForTracks = ids => {
+    return axios.get(`/audio-features?ids=${ids}`);
+  };
