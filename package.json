@@ -15,7 +15,7 @@
     "server": "nodemon index.js",
     "client": "cd client && npm start",
     "build": "NODE_ENV=production cd client/ && npm install",
-    "start server": "node index.js"
+    "start-server": "node index.js"
   },
   "keywords": [],
   "author": "",
